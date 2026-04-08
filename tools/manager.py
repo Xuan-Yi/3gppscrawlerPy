@@ -84,16 +84,20 @@ class AsyncTRManager:
         base_name = os.path.splitext(filename)[0]
         local_zip_path = self.storage.get_local_path(filename)
         source_exists = self.storage.find_source_doc(base_name) is not None
+        pdf_exists = self.storage.find_pdf(base_name) is not None
 
-        should_extract = (
-            force_extract
-            or (tr_info.get("update_available") and (not no_extract or export_pdf))
-            or (export_pdf and not source_exists)
-        )
+        if force_extract:
+            should_extract = True
+        elif tr_info.get("update_available"):
+            should_extract = not no_extract or export_pdf
+        elif export_pdf:
+            should_extract = not source_exists and not pdf_exists
+        else:
+            should_extract = False
 
         if not should_extract:
-            if export_pdf and source_exists:
-                logger.info("Source file for %s already exists; skipping extraction.", tr_info["tr"])
+            if export_pdf and (source_exists or pdf_exists):
+                logger.info("Source or PDF for %s already exists; skipping extraction.", tr_info["tr"])
             return True
 
         if not os.path.exists(local_zip_path):

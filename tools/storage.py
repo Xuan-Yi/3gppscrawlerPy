@@ -31,6 +31,11 @@ class StorageManager:
                 return path
         return None
 
+    def find_pdf(self, base_name: str) -> str | None:
+        """Return the path to the .pdf file if it exists."""
+        path = self.get_local_path(f"{base_name}.pdf")
+        return path if os.path.exists(path) else None
+
     def get_local_tr_version(self, tr: TR) -> TRVersion | None:
         """Check the latest TR version available in the local folder."""
         if not os.path.exists(self.local_folder):
@@ -83,6 +88,10 @@ class StorageManager:
         import win32com.client
 
         base_name = os.path.splitext(filename)[0]
+        if self.find_pdf(base_name):
+            logger.info("PDF for %s already exists; skipping conversion.", base_name)
+            return True
+
         source_path = self.find_source_doc(base_name)
         if source_path is None:
             logger.error("No .doc or .docx found for %s", base_name)
