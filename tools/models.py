@@ -1,5 +1,10 @@
+from collections.abc import Iterable
 from functools import total_ordering
 import re
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @total_ordering
 class TRVersion:
@@ -8,33 +13,19 @@ class TRVersion:
         self.major, self.minor = self._parse(version_str)
 
     def _parse(self, v):
-        # v is likely a tuple or string.
-        # The original code handled tuples ('f', '20') or ('1', '0')
-        # Let's standardize on the tuple or string.
         if isinstance(v, tuple):
-             first = v[0]
-             second = v[1]
+            first, second = v[0], v[1]
         elif isinstance(v, str):
-            # If string like "f20" or "100"
-            # It's actually tricky because the regex in original code split it:
-            # ([a-z]|\d)(\d+)
             m = re.match(r"([a-z]|\d)(\d+)", v, re.IGNORECASE)
             if m:
                 first, second = m.groups()
             else:
-                first, second = '0', '0' # Fallback
+                logger.warning("Unrecognized version string %r; treating as 0.0", v)
+                first, second = '0', '0'
         else:
-             first, second = '0', '0'
+            logger.warning("Unexpected version type %r; treating as 0.0", type(v))
+            first, second = '0', '0'
 
-        # Logic from original version_key
-        # Digits are sorted before letters.
-        # But wait, original code:
-        # first = int(v[0]) if v[0].isdigit() else ord(v[0].lower()) + 100
-        # If v[0] is digit (e.g. '1'), it becomes int(1).
-        # If v[0] is letter (e.g. 'f'), it becomes ord('f') + 100.
-        # So '1' (1) < 'f' (102+100=202).
-        # So digits come BEFORE letters.
-        
         major_val = int(first) if first.isdigit() else ord(first.lower()) + 100
         minor_val = int(second)
         return major_val, minor_val
@@ -49,26 +40,58 @@ class TRVersion:
             return NotImplemented
         return (self.major, self.minor) < (other.major, other.minor)
 
-    def __str__(self):
-        # We need to reconstruct the original representation if possible,
-        # but since we transformed it, we might rely on the raw value passed in if accessible.
-        # For now, let's assume raw is kept or we don't strictly need to reconstruct it 
-        # exactly unless we store the parts.
+    @property
+    def tag(self) -> str:
+        """Raw 3GPP version tag, e.g. 'j01'."""
         if isinstance(self.raw, tuple):
             return f"{self.raw[0]}{self.raw[1]}"
         return str(self.raw)
 
+    def __str__(self) -> str:
+        """Human-readable version string, e.g. '19.0.1'.
+
+        3GPP encodes versions as XYZ where X is a letter (a=Rel-10, b=Rel-11, …)
+        or digit (pre-Rel-10), Y is the technical version, and Z the editorial version.
+        """
+        if isinstance(self.raw, tuple):
+            first, second = self.raw[0], self.raw[1]
+        else:
+            m = re.match(r"([a-z]|\d)(\d+)", str(self.raw), re.IGNORECASE)
+            if not m:
+                return str(self.raw)
+            first, second = m.groups()
+
+        release = int(first) if first.isdigit() else ord(first.lower()) - ord('a') + 10
+        tech = int(second[0]) if second else 0
+        edit = int(second[1:]) if len(second) > 1 else 0
+        return f"{release}.{tech}.{edit}"
+
+
+def find_latest_version(pattern: str, candidates: Iterable[str]) -> tuple | None:
+    """
+    Single-pass scan of `candidates` for strings matching `pattern`.
+    Returns the raw regex-groups tuple for the highest TRVersion found, or None.
+    """
+    best: tuple | None = None
+    best_ver: "TRVersion | None" = None
+    for item in candidates:
+        m = re.search(pattern, item, re.IGNORECASE)
+        if m:
+            groups = m.groups()
+            ver = TRVersion(groups)
+            if best_ver is None or ver > best_ver:
+                best, best_ver = groups, ver
+    return best
+
+
 class TR:
     def __init__(self, number):
         self.number = number
-        self.series = f"{number[:2]}_series"
-        # Sanitize for filename usage
+        self.series = f"{number.split('.')[0]}_series"
         self.clean_number = number.replace('.', '')
 
     def get_filename_pattern(self):
-        # pattern = rf"{tr_number.replace('.', '')}-([a-z]|\d)(\d+)\.zip"
-        # Updated to match zip, doc, docx, pdf
         return rf"{self.clean_number}-([a-z]|\d)(\d+)\.(?:zip|docx?|pdf)"
-    
+
     def format_filename(self, version_tuple):
         return f"{self.clean_number}-{version_tuple[0]}{version_tuple[1]}.zip"

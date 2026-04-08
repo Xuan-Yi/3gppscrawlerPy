@@ -1,19 +1,37 @@
-import os
+"""
+Loads configuration from config.toml at the project root.
+All constants retain the same names so the rest of the codebase needs no changes.
+"""
+import tomllib
+from pathlib import Path
 
-DEFAULT_TR_LIST = [
-    "38.811", "38.821", "38.863", "38.820", "38.921",
-    "36.942", "38.814", "38.815", "38.901", "38.913"
-]
+_cfg_path = Path(__file__).parent.parent / "config.toml"
+try:
+    with _cfg_path.open("rb") as _f:
+        _cfg = tomllib.load(_f)
+except FileNotFoundError:
+    raise FileNotFoundError(
+        f"Configuration file not found: {_cfg_path}\n"
+        "Create config.toml in the project root before running."
+    ) from None
+except tomllib.TOMLDecodeError as e:
+    raise ValueError(f"Invalid TOML in {_cfg_path}: {e}") from e
 
-BASE_URL = "https://www.3gpp.org/ftp/Specs/archive/"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0 Safari/537.36"
-}
-LOCAL_FOLDER = "./3gpp_trs"
+# Network
+BASE_URL                = _cfg["network"]["base_url"]
+HEADERS                 = {"User-Agent": _cfg["network"]["user_agent"]}
+TIMEOUT_PAGE            = _cfg["network"]["timeout_page"]
+TIMEOUT_DOWNLOAD        = _cfg["network"]["timeout_download"]
+RETRY_ATTEMPTS          = _cfg["network"]["retry_attempts"]
+RETRY_BACKOFF           = _cfg["network"]["retry_backoff"]
+MAX_CONCURRENT_REQUESTS = _cfg["network"]["max_concurrent"]
 
-# Ensure local folder exists
-if not os.path.exists(LOCAL_FOLDER):
-    try:
-        os.makedirs(LOCAL_FOLDER)
-    except OSError:
-        pass # Handle permissions or other errors gracefully in usage
+# Storage
+LOCAL_FOLDER            = _cfg["storage"]["local_folder"]
+
+# Processing
+MAX_WORKERS             = _cfg["processing"]["max_workers"]
+MAX_WORD_INSTANCES      = _cfg["processing"]["max_word_instances"]
+
+# TRs
+DEFAULT_TR_LIST         = _cfg["trs"]["default_list"]

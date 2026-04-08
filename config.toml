@@ -1,0 +1,21 @@
+[network]
+base_url            = "https://www.3gpp.org/ftp/Specs/archive/"
+user_agent          = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0 Safari/537.36"
+timeout_page        = 15      # seconds for archive page fetch
+timeout_download    = 30      # seconds between chunks during download (sock_read)
+retry_attempts      = 3       # attempts before giving up on a transient failure
+retry_backoff       = 1.0     # initial backoff in seconds (doubles each attempt)
+max_concurrent      = 3       # max simultaneous HTTP connections to the 3GPP server
+
+[storage]
+local_folder        = "./3gpp_trs"
+
+[processing]
+max_workers         = 4       # thread-pool size for extract/convert phases
+max_word_instances  = 2       # parallel Word COM instances for PDF conversion (RAM-bound)
+
+[trs]
+default_list = [
+    "38.811", "38.821", "38.863", "38.820", "38.921",
+    "36.942", "38.814", "38.815", "38.901", "38.913",
+]
