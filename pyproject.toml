@@ -8,7 +8,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     "bs4>=0.0.2",
     "pymupdf>=1.27.2.2",
-    "pywin32>=306",
+    "pywin32>=311",
     "rich>=14.3.3",
-    "tqdm>=4.67.1",
+    "tqdm>=4.67.3",
 ]
