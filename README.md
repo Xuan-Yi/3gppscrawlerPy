@@ -72,36 +72,21 @@ At least one of `--tr` or `--ts` must be specified.
 ### Examples
 
 ```sh
-# Check a TR and a TS — shows a rich status table, no downloads
+# Check a TR and a TS — shows a rich status table (including PDF status)
 uv run cli.py -t 38.811 -s 23.501 --check-only
 
-# Update a specific TR and export to PDF
+# Update a specific TR and export to PDF (skips if PDF already exists)
 uv run cli.py -t 38.811 --export-pdf
-
-# Update a TS
-uv run cli.py -s 23.501
-
-# Process a mix of TRs and TSs
-uv run cli.py -t 38.811 38.821 -s 23.501 23.502
-
-# Force re-extract a specific TR
-uv run cli.py -t 38.811 --force-extract
-
-# Update without extracting zips
-uv run cli.py -t 38.811 38.821 --no-extract
-
-# Run with more parallel workers
-uv run cli.py -t 38.811 --workers 7
 ```
 
 ## How It Works
 
 The pipeline runs in four phases:
 
-1. **Phase 1 — Check** (async, rate-limited): All documents are queried concurrently. Results are displayed as a rich table showing type, local version, remote version, and update status.
+1. **Phase 1 — Check** (async, rate-limited): All documents are queried concurrently. Results are displayed as a rich table showing type, local version, remote version, PDF status, and update status.
 2. **Phase 2 — Download** (async, rate-limited): Outdated documents are downloaded in parallel with per-file progress bars.
 3. **Phase 3 — Extract** (thread pool): Downloaded zips are extracted concurrently into their respective subfolders. Zip files are deleted after successful extraction.
-4. **Phase 4 — Convert** (thread pool, `--export-pdf` only): Extracted Word documents are converted to PDF in parallel using Word COM automation, with up to `max_word_instances` simultaneous Word processes.
+4. **Phase 4 — Convert** (thread pool, `--export-pdf` only): Extracted Word documents are converted to PDF in parallel using isolated Word COM instances. The source documents are **preserved** after conversion. Redundant conversions are skipped if a PDF with the matching version tag already exists.
 
 ## Output Layout
 

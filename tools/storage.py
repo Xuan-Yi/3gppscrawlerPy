@@ -109,8 +109,9 @@ class StorageManager:
                 pythoncom.CoInitialize()
                 _coinit_ok = True
 
-                word = win32com.client.Dispatch("Word.Application")
+                word = win32com.client.DispatchEx("Word.Application")
                 word.Visible = False
+                word.DisplayAlerts = 0  # wdAlertsNone
                 doc = word.Documents.Open(abs_source)
                 try:
                     doc.SaveAs(abs_pdf, FileFormat=_WD_FORMAT_PDF)
