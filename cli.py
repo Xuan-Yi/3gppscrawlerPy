@@ -43,14 +43,16 @@ def _print_check_report(results: list[dict]) -> None:
     table.add_column("Status",  no_wrap=True)
     table.add_column("Local",   style="dim",  no_wrap=True)
     table.add_column("Latest",  no_wrap=True)
+    table.add_column("PDF",     justify="center")
 
     for r in results:
         tr = r["tr"]
         doc_type = r["doc_type"]
+        pdf_status = "[green]YES[/green]" if r.get("pdf_exists") else "[dim]NO[/dim]"
         if r["status"] == "error":
-            table.add_row(doc_type, tr, "[red]ERROR[/red]", "—", r.get("error", ""))
+            table.add_row(doc_type, tr, "[red]ERROR[/red]", "—", "—", "—")
         elif r["status"] == "not_found":
-            table.add_row(doc_type, tr, "[yellow]NOT FOUND[/yellow]", "—", "—")
+            table.add_row(doc_type, tr, "[yellow]NOT FOUND[/yellow]", "—", "—", "—")
         elif r["update_available"]:
             table.add_row(
                 doc_type,
@@ -58,9 +60,10 @@ def _print_check_report(results: list[dict]) -> None:
                 "[green]UPDATE[/green]",
                 str(r["local_version"]) if r["local_version"] else "—",
                 f"[bold green]{r['latest_version']}[/bold green]",
+                pdf_status,
             )
         else:
-            table.add_row(doc_type, tr, "[blue]UP TO DATE[/blue]", str(r["local_version"]), "—")
+            table.add_row(doc_type, tr, "[blue]UP TO DATE[/blue]", str(r["local_version"]), "—", pdf_status)
 
     console.print(table)
 
@@ -166,14 +169,17 @@ async def _run(args: argparse.Namespace) -> list[str]:
 
         # ── Phase 4: PDF conversion ───────────────────────────────────────────
         if args.export_pdf:
-            to_convert = [r for r in all_infos if r["status"] == "found"]
+            to_convert = [r for r in all_infos if r["status"] == "found" and not r.get("pdf_exists")]
             _phase(f"Phase 4 — Converting {len(to_convert)} document(s) to PDF")
-            cv_results = await asyncio.gather(
-                *[manager.run_in_executor(manager.convert_tr, info)
-                  for info in to_convert],
-                return_exceptions=True,
-            )
-            _collect_phase_failures(to_convert, cv_results, "PDF conversion", failures)
+            if to_convert:
+                cv_results = await asyncio.gather(
+                    *[manager.run_in_executor(manager.convert_tr, info)
+                      for info in to_convert],
+                    return_exceptions=True,
+                )
+                _collect_phase_failures(to_convert, cv_results, "PDF conversion", failures)
+            else:
+                logging.info("All PDFs are up to date.")
 
     return failures
 

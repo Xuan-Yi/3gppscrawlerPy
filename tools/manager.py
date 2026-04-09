@@ -41,6 +41,9 @@ class AsyncTDocManager:
         local_version = self.storage.get_local_tr_version(tr)
         update_available = not local_version or local_version < latest_version
 
+        base_name = os.path.splitext(latest_filename)[0]
+        pdf_exists = self.storage.find_pdf(base_name, doc_type) is not None
+
         return {
             "status": "found",
             "tr": tr_number,
@@ -50,6 +53,7 @@ class AsyncTDocManager:
             "latest_url": latest_url,
             "local_version": local_version,
             "update_available": update_available,
+            "pdf_exists": pdf_exists,
         }
 
     # ------------------------------------------------------------------ phase 2

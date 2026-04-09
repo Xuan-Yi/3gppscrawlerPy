@@ -82,7 +82,6 @@ class StorageManager:
         Convert a .docx or .doc file to PDF using Word COM automation.
         Each call initializes its own COM apartment so multiple threads can
         convert in parallel (up to MAX_WORD_INSTANCES simultaneous instances).
-        Deletes the source document on success.
         Returns True on success, False on failure.
         """
         import pythoncom
@@ -119,8 +118,6 @@ class StorageManager:
                     doc.Close(SaveChanges=False)
 
                 logger.info("Converted to PDF: %s", os.path.basename(abs_pdf))
-                os.remove(source_path)
-                logger.info("Deleted %s after conversion.", os.path.basename(source_path))
                 return True
 
             except Exception as e:
