@@ -20,7 +20,7 @@ from rich import box
 
 from tools import config
 from tools.network import AsyncNetworkClient
-from tools.manager import AsyncTRManager
+from tools.manager import AsyncTDocManager
 
 console = Console()
 
@@ -33,31 +33,34 @@ def _print_check_report(results: list[dict]) -> None:
         return
 
     table = Table(
-        title="TR Status Report",
+        title="TDoc Status Report",
         box=box.ROUNDED,
         show_lines=False,
         highlight=True,
     )
-    table.add_column("TR",      style="cyan bold",  no_wrap=True)
+    table.add_column("Type",    style="magenta", no_wrap=True)
+    table.add_column("Number",  style="cyan bold",  no_wrap=True)
     table.add_column("Status",  no_wrap=True)
     table.add_column("Local",   style="dim",  no_wrap=True)
     table.add_column("Latest",  no_wrap=True)
 
     for r in results:
         tr = r["tr"]
+        doc_type = r["doc_type"]
         if r["status"] == "error":
-            table.add_row(tr, "[red]ERROR[/red]", "—", r.get("error", ""))
+            table.add_row(doc_type, tr, "[red]ERROR[/red]", "—", r.get("error", ""))
         elif r["status"] == "not_found":
-            table.add_row(tr, "[yellow]NOT FOUND[/yellow]", "—", "—")
+            table.add_row(doc_type, tr, "[yellow]NOT FOUND[/yellow]", "—", "—")
         elif r["update_available"]:
             table.add_row(
+                doc_type,
                 tr,
                 "[green]UPDATE[/green]",
                 str(r["local_version"]) if r["local_version"] else "—",
                 f"[bold green]{r['latest_version']}[/bold green]",
             )
         else:
-            table.add_row(tr, "[blue]UP TO DATE[/blue]", str(r["local_version"]), "—")
+            table.add_row(doc_type, tr, "[blue]UP TO DATE[/blue]", str(r["local_version"]), "—")
 
     console.print(table)
 
@@ -75,12 +78,12 @@ def _collect_phase_failures(
 ) -> None:
     """Process asyncio.gather results, log errors, and populate failures/successes lists."""
     for info, result in zip(items, results):
-        tr = info["tr"]
+        label_doc = f"{info['doc_type']} {info['tr']}"
         if isinstance(result, Exception):
-            logging.error("%s failed for %s: %s", label, tr, result)
-            failures.append(tr)
+            logging.error("%s failed for %s: %s", label, label_doc, result)
+            failures.append(label_doc)
         elif result is False:
-            failures.append(tr)
+            failures.append(label_doc)
         elif successes is not None:
             successes.append(info)
 
@@ -88,41 +91,43 @@ def _collect_phase_failures(
 # --------------------------------------------------------------------------- pipeline
 
 async def _run(args: argparse.Namespace) -> list[str]:
-    """Execute the full pipeline. Returns a list of failed TR numbers."""
-    tr_list: list[str] = args.tr if args.tr else config.DEFAULT_TR_LIST
-    if not args.tr:
-        logging.info("No TRs specified — using default list (%d TRs).", len(tr_list))
+    """Execute the full pipeline. Returns a list of failed TR/TS identifiers."""
+    docs: list[tuple[str, str]] = (
+        [(n, "TR") for n in (args.tr or [])] +
+        [(n, "TS") for n in (args.ts or [])]
+    )
 
     failures: list[str] = []
 
     async with AsyncNetworkClient() as network:
-        manager = AsyncTRManager(network)
+        manager = AsyncTDocManager(network)
 
-        # ── Phase 1: Check all TRs ────────────────────────────────────────────
-        _phase(f"Phase 1 — Checking {len(tr_list)} TR(s)")
+        # ── Phase 1: Check all TRs/TSs ───────────────────────────────────────
+        _phase(f"Phase 1 — Checking {len(docs)} document(s)")
         raw_results = await asyncio.gather(
-            *[manager.check_tr(tr) for tr in tr_list],
+            *[manager.check_tr(number, doc_type) for number, doc_type in docs],
             return_exceptions=True,
         )
 
         all_infos: list[dict] = []
-        for tr, result in zip(tr_list, raw_results):
+        for (number, doc_type), result in zip(docs, raw_results):
+            label = f"{doc_type} {number}"
             if isinstance(result, Exception):
-                logging.error("%s: unexpected error — %s", tr, result)
-                failures.append(tr)
+                logging.error("%s: unexpected error — %s", label, result)
+                failures.append(label)
             else:
                 all_infos.append(result)
                 if result["status"] in ("not_found", "error"):
-                    failures.append(tr)
+                    failures.append(label)
 
         _print_check_report(all_infos)
 
         if args.check_only:
             return failures
 
-        # ── Phase 2: Download outdated TRs ────────────────────────────────────
+        # ── Phase 2: Download outdated documents ──────────────────────────────
         to_download = [r for r in all_infos if r["status"] == "found" and r["update_available"]]
-        _phase(f"Phase 2 — Downloading {len(to_download)} TR(s)")
+        _phase(f"Phase 2 — Downloading {len(to_download)} document(s)")
 
         if to_download:
             print()  # breathing room above tqdm bars
@@ -145,7 +150,7 @@ async def _run(args: argparse.Namespace) -> list[str]:
         else:
             to_extract = downloaded
 
-        _phase(f"Phase 3 — Extracting {len(to_extract)} TR(s)")
+        _phase(f"Phase 3 — Extracting {len(to_extract)} document(s)")
 
         if to_extract:
             ex_results = await asyncio.gather(
@@ -162,7 +167,7 @@ async def _run(args: argparse.Namespace) -> list[str]:
         # ── Phase 4: PDF conversion ───────────────────────────────────────────
         if args.export_pdf:
             to_convert = [r for r in all_infos if r["status"] == "found"]
-            _phase(f"Phase 4 — Converting {len(to_convert)} TR(s) to PDF")
+            _phase(f"Phase 4 — Converting {len(to_convert)} document(s) to PDF")
             cv_results = await asyncio.gather(
                 *[manager.run_in_executor(manager.convert_tr, info)
                   for info in to_convert],
@@ -177,12 +182,16 @@ async def _run(args: argparse.Namespace) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Check and optionally update 3GPP TRs.",
+        description="Check and optionally update 3GPP Technical Reports (TR) and Technical Specifications (TS).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "-t", "--tr", metavar="TR", nargs="+", action="extend",
         help="TR numbers to process (e.g. -t 38.811 38.821). Repeatable.",
+    )
+    parser.add_argument(
+        "-s", "--ts", metavar="TS", nargs="+", action="extend",
+        help="TS numbers to process (e.g. -s 23.501 23.502). Repeatable.",
     )
     parser.add_argument("--check-only", action="store_true",
                         help="Report status only; do not download or extract.")
@@ -191,7 +200,7 @@ def main() -> None:
     parser.add_argument("--no-extract", action="store_true",
                         help="Skip zip extraction (overridden by --export-pdf).")
     parser.add_argument("--force-extract", action="store_true",
-                        help="Re-extract even if the TR is already up to date.")
+                        help="Re-extract even if the document is already up to date.")
     parser.add_argument("--workers", type=int, default=config.MAX_WORKERS,
                         help=f"Thread-pool size for extract/convert phases (default: {config.MAX_WORKERS}).")
 
@@ -200,6 +209,9 @@ def main() -> None:
     verbosity.add_argument("--quiet", action="store_true", help="Suppress informational output.")
 
     args = parser.parse_args()
+
+    if not args.tr and not args.ts:
+        parser.error("Specify at least one document: --tr <number> or --ts <number>")
 
     level = logging.DEBUG if args.verbose else (logging.WARNING if args.quiet else logging.INFO)
     logging.basicConfig(

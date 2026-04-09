@@ -3,60 +3,61 @@ import threading
 import zipfile
 import logging
 from . import config
-from .models import TR, TRVersion, find_latest_version
+from .models import TDoc, TDocVersion, DocType, find_latest_version
 
 logger = logging.getLogger(__name__)
 
-# Semaphore limiting simultaneous Word COM instances (each is ~200 MB RAM)
 _word_semaphore = threading.Semaphore(config.MAX_WORD_INSTANCES)
-
-# win32com constant for wdFormatPDF
-_WD_FORMAT_PDF = 17
+_WD_FORMAT_PDF = 17  # wdFormatPDF
 
 
 class StorageManager:
-    def __init__(self, local_folder=config.LOCAL_FOLDER):
-        self.local_folder = local_folder
-        if not os.path.exists(self.local_folder):
-            os.makedirs(self.local_folder)
+    _FOLDERS = {"TR": config.TR_FOLDER, "TS": config.TS_FOLDER}
 
-    def get_local_path(self, filename: str) -> str:
-        return os.path.join(self.local_folder, filename)
+    def __init__(self):
+        for folder in self._FOLDERS.values():
+            os.makedirs(folder, exist_ok=True)
 
-    def find_source_doc(self, base_name: str) -> str | None:
+    def _doc_folder(self, doc_type: DocType) -> str:
+        return self._FOLDERS[doc_type]
+
+    def get_local_path(self, filename: str, doc_type: DocType = "TR") -> str:
+        return os.path.join(self._doc_folder(doc_type), filename)
+
+    def find_source_doc(self, base_name: str, doc_type: DocType = "TR") -> str | None:
         """Return the path to the .docx or .doc source file, or None if neither exists."""
         for ext in (".docx", ".doc"):
-            path = self.get_local_path(f"{base_name}{ext}")
+            path = self.get_local_path(f"{base_name}{ext}", doc_type)
             if os.path.exists(path):
                 return path
         return None
 
-    def find_pdf(self, base_name: str) -> str | None:
+    def find_pdf(self, base_name: str, doc_type: DocType = "TR") -> str | None:
         """Return the path to the .pdf file if it exists."""
-        path = self.get_local_path(f"{base_name}.pdf")
+        path = self.get_local_path(f"{base_name}.pdf", doc_type)
         return path if os.path.exists(path) else None
 
-    def get_local_tr_version(self, tr: TR) -> TRVersion | None:
-        """Check the latest TR version available in the local folder."""
-        if not os.path.exists(self.local_folder):
-            return None
-        latest = find_latest_version(tr.get_filename_pattern(), os.listdir(self.local_folder))
-        return TRVersion(latest) if latest else None
+    def get_local_tr_version(self, tr: TDoc) -> TDocVersion | None:
+        """Check the latest version of a TR/TS available in its local subfolder."""
+        folder = self._doc_folder(tr.doc_type)
+        latest = find_latest_version(tr.get_filename_pattern(), os.listdir(folder))
+        return TDocVersion(latest) if latest else None
 
-    def extract_zip(self, filename: str) -> bool:
+    def extract_zip(self, filename: str, doc_type: DocType = "TR") -> bool:
         """
-        Extract the contents of a zip file into the local folder.
+        Extract the contents of a zip file into the doc-type subfolder.
         Deletes the zip only after confirming at least one file was extracted.
         Returns True on success, False on failure.
         """
-        zip_path = self.get_local_path(filename)
+        folder = self._doc_folder(doc_type)
+        zip_path = self.get_local_path(filename, doc_type)
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 members = zip_ref.namelist()
                 if not members:
                     logger.warning("Zip %s is empty; skipping extraction.", filename)
                     return False
-                zip_ref.extractall(self.local_folder)
+                zip_ref.extractall(folder)
                 logger.info("Extracted %s (%d file(s)).", filename, len(members))
 
             os.remove(zip_path)
@@ -76,7 +77,7 @@ class StorageManager:
             )
             return False
 
-    def export_doc_to_pdf(self, filename: str) -> bool:
+    def export_doc_to_pdf(self, filename: str, doc_type: DocType = "TR") -> bool:
         """
         Convert a .docx or .doc file to PDF using Word COM automation.
         Each call initializes its own COM apartment so multiple threads can
@@ -88,16 +89,16 @@ class StorageManager:
         import win32com.client
 
         base_name = os.path.splitext(filename)[0]
-        if self.find_pdf(base_name):
+        if self.find_pdf(base_name, doc_type):
             logger.info("PDF for %s already exists; skipping conversion.", base_name)
             return True
 
-        source_path = self.find_source_doc(base_name)
+        source_path = self.find_source_doc(base_name, doc_type)
         if source_path is None:
             logger.error("No .doc or .docx found for %s", base_name)
             return False
 
-        pdf_path = self.get_local_path(f"{base_name}.pdf")
+        pdf_path = self.get_local_path(f"{base_name}.pdf", doc_type)
         abs_source = os.path.abspath(source_path)
         abs_pdf = os.path.abspath(pdf_path)
         logger.info("Converting %s to PDF...", os.path.basename(source_path))

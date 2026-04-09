@@ -2,16 +2,16 @@ import asyncio
 import os
 import logging
 from functools import partial
-from .models import TR
+from .models import TDoc, DocType
 from .network import AsyncNetworkClient, NetworkError
 from .storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
 
-class AsyncTRManager:
+class AsyncTDocManager:
     """
-    Orchestrates check / download / extract / convert operations for 3GPP TRs.
+    Orchestrates check / download / extract / convert operations for 3GPP TRs and TSs.
     Each phase is exposed as a separate method to support the CLI's phase-separated pipeline.
     """
 
@@ -21,21 +21,21 @@ class AsyncTRManager:
 
     # ------------------------------------------------------------------ phase 1
 
-    async def check_tr(self, tr_number: str) -> dict:
+    async def check_tr(self, tr_number: str, doc_type: DocType = "TR") -> dict:
         """
-        Check the remote archive for the latest version of a TR.
+        Check the remote archive for the latest version of a TR or TS.
         Returns a status dict:
           status: 'found' | 'not_found' | 'error'
         """
-        tr = TR(tr_number)
+        tr = TDoc(tr_number, doc_type)
         try:
             latest_info = await self.network.get_latest_tr_version(tr)
         except NetworkError as e:
-            logger.error("Network error checking %s: %s", tr_number, e)
-            return {"status": "error", "tr": tr_number, "error": str(e)}
+            logger.error("Network error checking %s %s: %s", doc_type, tr_number, e)
+            return {"status": "error", "tr": tr_number, "doc_type": doc_type, "error": str(e)}
 
         if not latest_info:
-            return {"status": "not_found", "tr": tr_number}
+            return {"status": "not_found", "tr": tr_number, "doc_type": doc_type}
 
         latest_filename, latest_url, latest_version = latest_info
         local_version = self.storage.get_local_tr_version(tr)
@@ -44,6 +44,7 @@ class AsyncTRManager:
         return {
             "status": "found",
             "tr": tr_number,
+            "doc_type": doc_type,
             "latest_version": latest_version,
             "latest_filename": latest_filename,
             "latest_url": latest_url,
@@ -63,9 +64,10 @@ class AsyncTRManager:
 
         filename = tr_info["latest_filename"]
         url = tr_info["latest_url"]
-        dest_path = self.storage.get_local_path(filename)
+        doc_type = tr_info["doc_type"]
+        dest_path = self.storage.get_local_path(filename, doc_type)
 
-        logger.info("Downloading %s (version %s)...", tr_info["tr"], tr_info["latest_version"])
+        logger.info("Downloading %s %s (version %s)...", tr_info["doc_type"], tr_info["tr"], tr_info["latest_version"])
         try:
             await self.network.download_file(url, dest_path, bar_position=bar_position)
             return True
@@ -81,10 +83,11 @@ class AsyncTRManager:
         Returns True on success or when extraction is not required.
         """
         filename = tr_info["latest_filename"]
+        doc_type = tr_info["doc_type"]
         base_name = os.path.splitext(filename)[0]
-        local_zip_path = self.storage.get_local_path(filename)
-        source_exists = self.storage.find_source_doc(base_name) is not None
-        pdf_exists = self.storage.find_pdf(base_name) is not None
+        local_zip_path = self.storage.get_local_path(filename, doc_type)
+        source_exists = self.storage.find_source_doc(base_name, doc_type) is not None
+        pdf_exists = self.storage.find_pdf(base_name, doc_type) is not None
 
         if force_extract:
             should_extract = True
@@ -104,7 +107,7 @@ class AsyncTRManager:
             logger.error("Zip not found for %s; cannot extract.", tr_info["tr"])
             return False
 
-        return self.storage.extract_zip(filename)
+        return self.storage.extract_zip(filename, doc_type)
 
     # ------------------------------------------------------------------ phase 4
 
@@ -113,7 +116,7 @@ class AsyncTRManager:
         Convert the TR source doc to PDF. Intended to run in a thread-pool executor.
         Returns True on success.
         """
-        return self.storage.export_doc_to_pdf(tr_info["latest_filename"])
+        return self.storage.export_doc_to_pdf(tr_info["latest_filename"], tr_info["doc_type"])
 
     # ------------------------------------------------------------------ async helpers
 

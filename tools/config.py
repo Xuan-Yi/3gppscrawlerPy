@@ -27,11 +27,10 @@ RETRY_BACKOFF           = _cfg["network"]["retry_backoff"]
 MAX_CONCURRENT_REQUESTS = _cfg["network"]["max_concurrent"]
 
 # Storage
-LOCAL_FOLDER            = _cfg["storage"]["local_folder"]
+TR_FOLDER               = _cfg["storage"]["tr_folder"]
+TS_FOLDER               = _cfg["storage"]["ts_folder"]
 
 # Processing
 MAX_WORKERS             = _cfg["processing"]["max_workers"]
 MAX_WORD_INSTANCES      = _cfg["processing"]["max_word_instances"]
 
-# TRs
-DEFAULT_TR_LIST         = _cfg["trs"]["default_list"]

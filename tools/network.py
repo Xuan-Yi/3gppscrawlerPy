@@ -7,7 +7,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from . import config
-from .models import TR, TRVersion, find_latest_version
+from .models import TDoc, TDocVersion, find_latest_version
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +91,10 @@ class AsyncNetworkClient:
 
     # ------------------------------------------------------------------ public
 
-    async def get_latest_tr_version(self, tr: TR):
+    async def get_latest_tr_version(self, tr: TDoc):
         """
         Scrape the 3GPP archive page to find the latest version of a TR.
-        Returns (filename, url, TRVersion) if found, None if no files are listed.
+        Returns (filename, url, TDocVersion) if found, None if no files are listed.
         Raises NetworkError on connectivity failure.
         """
         tr_url = f"{self.base_url}{tr.series}/{tr.number}/"
@@ -110,7 +110,7 @@ class AsyncNetworkClient:
             return None
 
         latest_filename = tr.format_filename(latest_v_tuple)
-        return latest_filename, tr_url + latest_filename, TRVersion(latest_v_tuple)
+        return latest_filename, tr_url + latest_filename, TDocVersion(latest_v_tuple)
 
     async def download_file(self, url: str, dest_path: str, bar_position: int = 0) -> None:
         """

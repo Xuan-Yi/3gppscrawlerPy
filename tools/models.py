@@ -1,13 +1,16 @@
 from collections.abc import Iterable
 from functools import total_ordering
+from typing import Literal
 import re
 import logging
+
+DocType = Literal["TR", "TS"]
 
 logger = logging.getLogger(__name__)
 
 
 @total_ordering
-class TRVersion:
+class TDocVersion:
     def __init__(self, version_str):
         self.raw = version_str
         self.major, self.minor = self._parse(version_str)
@@ -31,12 +34,12 @@ class TRVersion:
         return major_val, minor_val
 
     def __eq__(self, other):
-        if not isinstance(other, TRVersion):
+        if not isinstance(other, TDocVersion):
             return NotImplemented
         return (self.major, self.minor) == (other.major, other.minor)
 
     def __lt__(self, other):
-        if not isinstance(other, TRVersion):
+        if not isinstance(other, TDocVersion):
             return NotImplemented
         return (self.major, self.minor) < (other.major, other.minor)
 
@@ -70,23 +73,24 @@ class TRVersion:
 def find_latest_version(pattern: str, candidates: Iterable[str]) -> tuple | None:
     """
     Single-pass scan of `candidates` for strings matching `pattern`.
-    Returns the raw regex-groups tuple for the highest TRVersion found, or None.
+    Returns the raw regex-groups tuple for the highest TDocVersion found, or None.
     """
     best: tuple | None = None
-    best_ver: "TRVersion | None" = None
+    best_ver: "TDocVersion | None" = None
     for item in candidates:
         m = re.search(pattern, item, re.IGNORECASE)
         if m:
             groups = m.groups()
-            ver = TRVersion(groups)
+            ver = TDocVersion(groups)
             if best_ver is None or ver > best_ver:
                 best, best_ver = groups, ver
     return best
 
 
-class TR:
-    def __init__(self, number):
+class TDoc:
+    def __init__(self, number, doc_type: DocType = "TR"):
         self.number = number
+        self.doc_type = doc_type
         self.series = f"{number.split('.')[0]}_series"
         self.clean_number = number.replace('.', '')
 
